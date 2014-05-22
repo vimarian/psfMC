@@ -1,4 +1,4 @@
-from numpy import outer, modf, clip
+from numpy import outer, modf, clip, zeros
 from .ComponentBase import ComponentBase
 
 
@@ -9,7 +9,23 @@ class PSF(ComponentBase):
     def __init__(self, xy=None, mag=None):
         self.xy = xy
         self.mag = mag
+        self.img_shape = (2, 2)
+        self.mag_zp = 0
         super(PSF, self).__init__()
+
+    def set_img_properties(self, shape, mag_zp, **kwargs):
+        self.img_shape = shape
+        self.mag_zp = mag_zp
+
+    def raw_img(self, img_shape, mag_zp, **kwargs):
+        img = zeros(img_shape, dtype='f8')
+        flux = 10**(-0.4 * (self.mag - mag_zp))
+        fracs, ints = modf(clip(self.xy, (0, 0),
+                                (self.img_shape[1]-2, self.img_shape[0]-2)))
+        fluxarr = flux * outer((1-fracs[1], fracs[1]),
+                               (1-fracs[0], fracs[0]))
+        img[ints[1]:ints[1]+2, ints[0]:ints[0]+2] = fluxarr
+        return img
 
     def add_to_array(self, arr, mag_zp, **kwargs):
         """

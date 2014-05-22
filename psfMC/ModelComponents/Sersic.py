@@ -27,6 +27,9 @@ class Sersic(ComponentBase):
         self.index = index
         self.angle = angle
         self.angle_degrees = angle_degrees
+        self.img_shape = (2, 2)
+        self.mag_zp = 0
+        self.coords = None
 
         # Enforce major axis > minor axis.
         # Otherwise rotation angle makes no sense.
@@ -94,6 +97,40 @@ class Sersic(ComponentBase):
         # TODO: Might be room for optimization here?
         radii = sum(dot(inv_xform, (coords-self.xy).T)**2, axis=0)
         return radii
+
+    def set_img_properties(self, shape, mag_zp, **kwargs):
+        self.img_shape = shape
+        self.mag_zp = mag_zp
+        self.coords = kwargs['coords'] if 'coords' in kwargs \
+            else array_coords(shape)
+
+    def raw_img(self, img_shape, mag_zp, coords, **kwargs):
+        kappa = Sersic.kappa(self.index)
+        flux_tot = Sersic.total_flux_adu(self.mag, mag_zp)
+        sbeff = self.sb_eff_adu(mag_zp, flux_tot, kappa)
+
+        sq_radii = self.coordinate_sq_radii(coords)
+        sq_radii = sq_radii.reshape(img_shape)
+
+        # Optimization: the square root to get to radii from square radii is
+        # combined with the sersic power here
+        radius_pow = 0.5 / self.index
+        # Optimization: exp(log(a)*b) is faster than a**b or pow(a,b)
+        if ne is not None:
+            ser_expr = 'sbeff * exp(-kappa * expm1(log(sq_radii)*radius_pow))'
+            sb = ne.evaluate(ser_expr)
+        else:
+            sb = sbeff * exp(-kappa * (exp(log(sq_radii)*radius_pow) - 1))
+        # estimate distance of the pixel center of mass from the pixel center
+        # in units of reff
+        grad = Sersic._normed_grad(sq_radii, radius_pow, kappa)
+        # TODO: should delta_r change per-pixel based on ellipse params?
+        # Find the barycenter offset from the center (units of reff) within the
+        # pixel-sized trapezoid having a top with the given normed gradient.
+        delta_r = 1 / self.reff
+        bary_offset = delta_r**2 / 12 * grad
+        return sb * (1 + grad * bary_offset)
+
 
     def add_to_array(self, arr, mag_zp, **kwargs):
         """

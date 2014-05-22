@@ -54,13 +54,16 @@ def multicomponent_model(obs_data, obs_ivm, psf_data, psf_ivm,
             sky = component
             stochastics += [sky]
         else:
+            component.set_img_properties(obs_data.shape, mag_zp,
+                                         coords=data_coords)
             model_comps += [component]
 
     @deterministic(plot=False, trace=False)
     def raw_model(model_comps=model_comps):
         modelpx = np.zeros_like(obs_var)
         for comp in model_comps:
-            comp.add_to_array(modelpx, mag_zp, coords=data_coords)
+            modelpx += comp.raw_img(obs_data.shape, mag_zp, coords=data_coords)
+            # comp.add_to_array(modelpx, mag_zp, coords=data_coords)
         return modelpx
 
     @deterministic(plot=False, trace=False)
